@@ -1,13 +1,12 @@
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import os
-import cassio
 import pdfplumber
 from werkzeug.utils import secure_filename
-from langchain.vectorstores.cassandra import Cassandra
+from langchain_community.vectorstores import FAISS  # ✅ Using FAISS instead of Astra DB
 from langchain.indexes.vectorstore import VectorStoreIndexWrapper
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings  # ✅ Updated import
 from langchain.tools import Tool
 from langchain.agents import initialize_agent, AgentType
 from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
@@ -32,19 +31,16 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # ✅ Load API Keys
-ASTRA_DB_APPLICATION_TOKEN = os.getenv('ASTRA_DB_APPLICATION_TOKEN')
-ASTRA_DB_ID = os.getenv('ASTRA_DB_ID')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 
-# ✅ Initialize Cassandra (with error handling)
-try:
-    cassio.init(token=ASTRA_DB_APPLICATION_TOKEN, database_id=ASTRA_DB_ID)
-except Exception as e:
-    print(f"❌ Error initializing Astra DB: {e}")
-    cassio = None  # Prevents further errors if DB connection fails
+# ✅ Use FAISS Instead of Cassandra (Fixes High Memory Usage)
+def initialize_vector_store(text_chunks):
+    embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L12-v2")  # ✅ Lighter Model
+    vector_store = FAISS.from_texts(text_chunks, embedding)
+    return VectorStoreIndexWrapper(vectorstore=vector_store)
 
-# ✅ YouTube API Function (with error handling)
+# ✅ YouTube API Function (With Error Handling)
 def get_youtube_videos(query):
     """Fetches relevant YouTube videos based on the query."""
     if not YOUTUBE_API_KEY:
@@ -71,13 +67,6 @@ def extract_text_from_pdf(pdf_path):
         for page in pdf.pages:
             raw_text += page.extract_text() + "\n"
     return raw_text if raw_text.strip() else "Error: Could not extract text from PDF."
-
-# ✅ Initialize Vector Store
-def initialize_vector_store(text_chunks):
-    embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vector_store = Cassandra(embedding=embedding, table_name="QA_Mini_Demo", session=None, keyspace=None)
-    vector_store.add_texts(text_chunks)
-    return VectorStoreIndexWrapper(vectorstore=vector_store)
 
 # ✅ Get Vector Store (Thread-Safe)
 def get_vector_store():
@@ -165,4 +154,5 @@ def chat():
 
 # ✅ Run Flask App
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    port = int(os.environ.get("PORT", 10000))  # ✅ Ensure proper port binding for Render
+    app.run(host="0.0.0.0", port=port, debug=True)
