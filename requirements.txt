@@ -13,4 +13,4 @@ wikipedia
 arxiv
 sentence-transformers
 gunicorn
-faiss
+faiss-cpu
