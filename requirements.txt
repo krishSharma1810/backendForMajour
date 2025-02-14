@@ -12,3 +12,4 @@ duckduckgo-search
 wikipedia
 arxiv
 sentence-transformers
+gunicorn
