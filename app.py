@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import os
+import faiss
+import pickle
 import pdfplumber
 from werkzeug.utils import secure_filename
 from langchain_community.vectorstores import FAISS  # ✅ Using FAISS instead of Astra DB
@@ -36,10 +38,15 @@ YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 
 # ✅ Use FAISS Instead of Cassandra (Fixes High Memory Usage)
 def initialize_vector_store(text_chunks):
-    embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L12-v2")  # ✅ Lighter Model
+    embedding = HuggingFaceEmbeddings(model_name="BAAI/bge-m3")  # ✅ Lighter Model
     vector_store = FAISS.from_texts(text_chunks, embedding)
-    return VectorStoreIndexWrapper(vectorstore=vector_store)
-
+    
+    # ✅ Save to Disk (Avoid Memory Overflow)
+    faiss.write_index(vector_store.index, "vector_store.index")
+    with open("vector_store.pkl", "wb") as f:
+        pickle.dump(vector_store, f)
+    
+    return vector_store
 # ✅ YouTube API Function (With Error Handling)
 def get_youtube_videos(query):
     """Fetches relevant YouTube videos based on the query."""
@@ -70,9 +77,14 @@ def extract_text_from_pdf(pdf_path):
 
 # ✅ Get Vector Store (Thread-Safe)
 def get_vector_store():
-    if "vector_store" not in g:
-        g.vector_store = None
-    return g.vector_store
+    try:
+        index = faiss.read_index("vector_store.index")
+        with open("vector_store.pkl", "rb") as f:
+            vector_store = pickle.load(f)
+        return vector_store
+    except:
+        return None  # If no stored vector store, return None
+
 
 # ✅ API Route: Upload PDF & Initialize Vector Store
 @app.route("/upload", methods=["POST"])
